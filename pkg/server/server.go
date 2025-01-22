@@ -43,6 +43,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	grpc_health "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 
 	"github.com/parca-dev/parca/pkg/debuginfo"
@@ -109,6 +110,17 @@ func (s *Server) ListenAndServe(
 		grpc.MaxSendMsgSize(debuginfo.MaxMsgSize),
 		grpc.MaxRecvMsgSize(debuginfo.MaxMsgSize),
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			MaxConnectionIdle:     15 * time.Minute,
+			MaxConnectionAge:      30 * time.Minute,
+			MaxConnectionAgeGrace: 5 * time.Minute,
+			Time:                  5 * time.Minute,  // Time to wait before pinging client if no activity
+			Timeout:               20 * time.Second, // Time to wait for ping ack before closing connection
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             5 * time.Second, // Minimum time clients should wait before sending pings
+			PermitWithoutStream: true,            // Allow pings even when there are no active streams
+		}),
 		grpc.ChainStreamInterceptor(
 			met.StreamServerInterceptor(),
 			grpc_logging.StreamServerInterceptor(InterceptorLogger(logger), logOpts...),

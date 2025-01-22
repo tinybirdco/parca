@@ -35,7 +35,7 @@ const (
 	// and a maximum of 15MB, and a default of 8MB.
 	ChunkSize = 1024 * 1024 * 8
 	// MaxMsgSize is the maximum message size the server can receive or send. By default, it is 64MB.
-	MaxMsgSize = 1024 * 1024 * 64
+	MaxMsgSize = 1024 * 1024 * 1024 * 5
 )
 
 type GrpcDebuginfoUploadServiceClient interface {
