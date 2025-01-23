@@ -334,14 +334,34 @@ func (c *cachedLiner) newExternalExecutableLiner(
 }
 
 func (l *externalExecutableLiner) Close() error {
+	level.Debug(l.logger).Log("msg", "closing external executable liner")
 	err := l.inputPipe.Close()
 	if err != nil {
+		level.Warn(l.logger).Log("msg", "error closing input pipe of addr2line process", "err", err)
 		return err
 	}
+	level.Debug(l.logger).Log("msg", "input pipe of addr2line process closed")
+
+	outPipe, err := l.cmd.StdoutPipe()
+	if err != nil {
+		level.Warn(l.logger).Log("msg", "error getting output pipe of addr2line process", "err", err)
+		return err
+	}
+	err = outPipe.Close()
+	if err != nil {
+		level.Warn(l.logger).Log("msg", "error closing output pipe of addr2line process", "err", err)
+		return err
+	}
+	level.Debug(l.logger).Log("msg", "output pipe of addr2line process closed")
+
 	err = l.cmd.Wait()
 	if err != nil {
+		level.Warn(l.logger).Log("msg", "error waiting for addr2line process to exit", "err", err)
 		return err
 	}
+
+	level.Debug(l.logger).Log("msg", "addr2line process exited")
+
 	return nil
 }
 
@@ -358,19 +378,27 @@ func (l *externalExecutableLiner) PCToLines(ctx context.Context, pc uint64) ([]p
 	// addr2line output consists of a variable number of pairs of lines per address
 	// The first line of each block of output is the address, if we have to skip additional lines
 	// it means the previous read loop left some output unread
+	level.Debug(l.logger).Log("msg", "scan 1")
 	l.scanner.Scan()
+	level.Debug(l.logger).Log("msg", "scan 1 finished")
 	addressLine := l.scanner.Text()
 	for !strings.HasPrefix(addressLine, "0x") {
+		level.Debug(l.logger).Log("msg", "scan 2")
 		l.scanner.Scan()
+		level.Debug(l.logger).Log("msg", "scan 2 finished")
 		addressLine = l.scanner.Text()
 	}
 
 	keepReading := true
+	level.Debug(l.logger).Log("msg", "scan 3")
 	l.scanner.Scan()
+	level.Debug(l.logger).Log("msg", "scan 3 finished")
 	for keepReading {
 		line1 := l.scanner.Text()
 
+		level.Debug(l.logger).Log("msg", "scan 4")
 		l.scanner.Scan()
+		level.Debug(l.logger).Log("msg", "scan 4 finished")
 		line2 := l.scanner.Text()
 
 		line1 = strings.TrimSuffix(line1, "\n")
@@ -391,7 +419,9 @@ func (l *externalExecutableLiner) PCToLines(ctx context.Context, pc uint64) ([]p
 			},
 		})
 
+		level.Debug(l.logger).Log("msg", "scan 5")
 		l.scanner.Scan()
+		level.Debug(l.logger).Log("msg", "scan 5 finished")
 		keepReading = !strings.HasPrefix(l.scanner.Text(), "0x")
 	}
 
