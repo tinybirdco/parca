@@ -969,6 +969,7 @@ func (q *Querier) rowsToArrowRecords(
 			if idx < len(s.mappingFiles) {
 				if err := w.MappingFile.Append([]byte(s.mappingFiles[idx])); err != nil {
 					level.Error(q.logger).Log("msg", "failed to append mapping file", "err", err)
+					w.MappingFile.AppendNull()
 				}
 			} else {
 				w.MappingFile.AppendNull()
@@ -977,6 +978,7 @@ func (q *Querier) rowsToArrowRecords(
 			if idx < len(s.mappingBuildIDs) {
 				if err := w.MappingBuildID.Append([]byte(s.mappingBuildIDs[idx])); err != nil {
 					level.Error(q.logger).Log("msg", "failed to append mapping build id", "err", err)
+					w.MappingBuildID.AppendNull()
 				}
 			} else {
 				w.MappingBuildID.AppendNull()
@@ -1002,15 +1004,19 @@ func (q *Querier) rowsToArrowRecords(
 				for _, line := range symbolizedLoc.Lines {
 					w.Line.Append(true)
 					w.LineNumber.Append(line.Line)
+					w.ColumnNumber.AppendNull()
 					if line.Function != nil {
 						if err := w.FunctionName.Append([]byte(line.Function.Name)); err != nil {
 							level.Error(q.logger).Log("msg", "failed to append function name", "err", err)
+							w.FunctionName.AppendNull()
 						}
 						if err := w.FunctionSystemName.Append([]byte(line.Function.SystemName)); err != nil {
 							level.Error(q.logger).Log("msg", "failed to append function system name", "err", err)
+							w.FunctionSystemName.AppendNull()
 						}
 						if err := w.FunctionFilename.Append([]byte(line.Function.Filename)); err != nil {
 							level.Error(q.logger).Log("msg", "failed to append function filename", "err", err)
+							w.FunctionFilename.AppendNull()
 						}
 						w.FunctionStartLine.Append(line.Function.StartLine)
 					} else {
@@ -1024,13 +1030,20 @@ func (q *Querier) rowsToArrowRecords(
 				// Use stored function data
 				w.Lines.Append(true)
 				w.Line.Append(true)
-				w.LineNumber.Append(s.lineNumbers[idx])
+				if idx < len(s.lineNumbers) {
+					w.LineNumber.Append(s.lineNumbers[idx])
+				} else {
+					w.LineNumber.AppendNull()
+				}
+				w.ColumnNumber.AppendNull()
 				if err := w.FunctionName.Append([]byte(s.functionNames[idx])); err != nil {
 					level.Error(q.logger).Log("msg", "failed to append function name", "err", err)
+					w.FunctionName.AppendNull()
 				}
 				if idx < len(s.functionSystemNames) {
 					if err := w.FunctionSystemName.Append([]byte(s.functionSystemNames[idx])); err != nil {
 						level.Error(q.logger).Log("msg", "failed to append function system name", "err", err)
+						w.FunctionSystemName.AppendNull()
 					}
 				} else {
 					w.FunctionSystemName.AppendNull()
@@ -1038,6 +1051,7 @@ func (q *Querier) rowsToArrowRecords(
 				if idx < len(s.functionFilenames) {
 					if err := w.FunctionFilename.Append([]byte(s.functionFilenames[idx])); err != nil {
 						level.Error(q.logger).Log("msg", "failed to append function filename", "err", err)
+						w.FunctionFilename.AppendNull()
 					}
 				} else {
 					w.FunctionFilename.AppendNull()
