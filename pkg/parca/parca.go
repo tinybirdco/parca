@@ -176,13 +176,14 @@ type FlagsDebuginfod struct {
 
 // FlagsClickHouse configures the ClickHouse storage backend.
 type FlagsClickHouse struct {
-	Enabled  bool   `kong:"help='Enable ClickHouse storage backend instead of FrostDB.',default='false',hidden=''"`
-	Address  string `kong:"help='ClickHouse server address.',default='localhost:9000',hidden=''"`
-	Database string `kong:"help='ClickHouse database name.',default='parca',hidden=''"`
-	Username string `kong:"help='ClickHouse username.',default='',hidden=''"`
-	Password string `kong:"help='ClickHouse password.',default='',env='PARCA_CLICKHOUSE_PASSWORD',hidden=''"`
-	Table    string `kong:"help='ClickHouse table name for profile data.',default='stacktraces',hidden=''"`
-	Secure   bool   `kong:"help='Use TLS for ClickHouse connection.',default='false',hidden=''"`
+	Enabled     bool   `kong:"help='Enable ClickHouse storage backend instead of FrostDB.',default='false',hidden=''"`
+	Address     string `kong:"help='ClickHouse server address.',default='localhost:9000',hidden=''"`
+	Database    string `kong:"help='ClickHouse database name.',default='parca',hidden=''"`
+	Username    string `kong:"help='ClickHouse username.',default='',hidden=''"`
+	Password    string `kong:"help='ClickHouse password.',default='',env='PARCA_CLICKHOUSE_PASSWORD',hidden=''"`
+	Table       string `kong:"help='ClickHouse table name for profile data.',default='stacktraces',hidden=''"`
+	Secure      bool   `kong:"help='Use TLS for ClickHouse connection.',default='false',hidden=''"`
+	Compression string `kong:"help='ClickHouse Native protocol compression: none, lz4, zstd.',default='zstd',enum='none,lz4,zstd',hidden=''"`
 }
 
 // FlagsHidden contains hidden flags intended only for debugging or experimental features.
@@ -343,12 +344,13 @@ func Run(ctx context.Context, logger log.Logger, reg *prometheus.Registry, flags
 		level.Info(logger).Log("msg", "initializing ClickHouse storage backend", "address", flags.Hidden.ClickHouse.Address)
 
 		chClient, err = clickhouse.NewClient(ctx, clickhouse.Config{
-			Address:  flags.Hidden.ClickHouse.Address,
-			Database: flags.Hidden.ClickHouse.Database,
-			Username: flags.Hidden.ClickHouse.Username,
-			Password: flags.Hidden.ClickHouse.Password,
-			Table:    flags.Hidden.ClickHouse.Table,
-			Secure:   flags.Hidden.ClickHouse.Secure,
+			Address:     flags.Hidden.ClickHouse.Address,
+			Database:    flags.Hidden.ClickHouse.Database,
+			Username:    flags.Hidden.ClickHouse.Username,
+			Password:    flags.Hidden.ClickHouse.Password,
+			Table:       flags.Hidden.ClickHouse.Table,
+			Secure:      flags.Hidden.ClickHouse.Secure,
+			Compression: flags.Hidden.ClickHouse.Compression,
 		})
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to connect to ClickHouse", "err", err)

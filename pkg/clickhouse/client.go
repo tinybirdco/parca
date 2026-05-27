@@ -24,12 +24,13 @@ import (
 
 // Config holds ClickHouse connection configuration.
 type Config struct {
-	Address  string
-	Database string
-	Username string
-	Password string
-	Table    string
-	Secure   bool
+	Address     string
+	Database    string
+	Username    string
+	Password    string
+	Table       string
+	Secure      bool
+	Compression string // "", "none", "lz4", "zstd"
 }
 
 // Client is a wrapper around the ClickHouse connection.
@@ -53,6 +54,17 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 
 	if cfg.Secure {
 		opts.TLS = &tls.Config{}
+	}
+
+	switch cfg.Compression {
+	case "", "zstd":
+		opts.Compression = &clickhouse.Compression{Method: clickhouse.CompressionZSTD}
+	case "lz4":
+		opts.Compression = &clickhouse.Compression{Method: clickhouse.CompressionLZ4}
+	case "none":
+		// leave opts.Compression nil
+	default:
+		return nil, fmt.Errorf("unsupported clickhouse compression %q (want none, lz4, zstd)", cfg.Compression)
 	}
 
 	conn, err := clickhouse.Open(opts)
