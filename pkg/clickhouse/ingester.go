@@ -211,6 +211,10 @@ func decodeLineInfo(data []byte) LineInfo {
 		offset += n
 		info.LineNumber = int64(lineNum)
 
+		// Skip column number; encoders always write it (0 when unknown)
+		_, n = varint.Uvarint(data[offset:])
+		offset += n
+
 		hasFunction := data[offset] == 0x1
 		offset++
 
