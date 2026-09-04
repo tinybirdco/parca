@@ -81,10 +81,13 @@ func (q *Querier) Labels(
 	var args []interface{}
 	var conditions []string
 
-	// Only apply time filter if both start and end are non-zero
+	// Only apply time filter if both start and end are non-zero.
+	// Filter on timestamp (millis) instead of time_nanos: timestamp is part of
+	// the table's sort key (after the profile type columns), so this range can
+	// be used by the primary index to skip granules. time_nanos alone cannot.
 	if start.Unix() != 0 && end.Unix() != 0 {
-		conditions = append(conditions, "time_nanos > ? AND time_nanos < ?")
-		args = append(args, start.UnixNano(), end.UnixNano())
+		conditions = append(conditions, "timestamp > ? AND timestamp < ?")
+		args = append(args, start.UnixMilli(), end.UnixMilli())
 	}
 
 	if profileType != "" {
@@ -151,10 +154,11 @@ func (q *Querier) Values(
 
 	var args []interface{}
 
-	// Only apply time filter if both start and end are non-zero
+	// Only apply time filter if both start and end are non-zero.
+	// timestamp (millis) instead of time_nanos so the primary index can prune.
 	if start.Unix() != 0 && end.Unix() != 0 {
-		query += " AND time_nanos > ? AND time_nanos < ?"
-		args = append(args, start.UnixNano(), end.UnixNano())
+		query += " AND timestamp > ? AND timestamp < ?"
+		args = append(args, start.UnixMilli(), end.UnixMilli())
 	}
 
 	if profileType != "" {
@@ -218,10 +222,11 @@ func (q *Querier) ProfileTypes(
 
 	var args []interface{}
 
-	// Only apply time filter if both start and end are non-zero
+	// Only apply time filter if both start and end are non-zero.
+	// timestamp (millis) instead of time_nanos so the primary index can prune.
 	if start.Unix() != 0 && end.Unix() != 0 {
-		query += " WHERE time_nanos > ? AND time_nanos < ?"
-		args = append(args, start.UnixNano(), end.UnixNano())
+		query += " WHERE timestamp > ? AND timestamp < ?"
+		args = append(args, start.UnixMilli(), end.UnixMilli())
 	}
 
 	rows, err := q.client.Query(ctx, query, args...)
@@ -306,8 +311,10 @@ func (q *Querier) QueryRange(
 	}
 
 	table := q.client.FullTableName()
-	start := startTime.UnixNano()
-	end := endTime.UnixNano()
+	// timestamp (millis) instead of time_nanos in WHERE so the primary index
+	// can prune granules; time_nanos stays in the SELECT for bucketing.
+	start := startTime.UnixMilli()
+	end := endTime.UnixMilli()
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -346,7 +353,7 @@ func (q *Querier) QueryRange(
 			%s
 		FROM %s
 		WHERE %s
-		  AND time_nanos >= ? AND time_nanos <= ?
+		  AND timestamp >= ? AND timestamp <= ?
 	`, sumBySelects, table, profileFilter)
 
 	// Build args in the correct order matching placeholder positions
@@ -583,6 +590,10 @@ func (q *Querier) QueryMerge(
 	table := q.client.FullTableName()
 	startNanos := start.UnixNano()
 	endNanos := end.UnixNano()
+	// WHERE filters on timestamp (millis) so the primary index can prune;
+	// nanos are still needed for the per-second duration calculation below.
+	startMillis := start.UnixMilli()
+	endMillis := end.UnixMilli()
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -632,12 +643,12 @@ func (q *Querier) QueryMerge(
 			period as sample_period
 		FROM %s
 		WHERE %s
-		  AND time_nanos >= ? AND time_nanos <= ?
+		  AND timestamp >= ? AND timestamp <= ?
 	`, queryDuration, table, profileFilter)
 
 	// Build args in the correct order matching placeholder positions
 	args := append([]interface{}{}, profileArgs...)
-	args = append(args, startNanos, endNanos)
+	args = append(args, startMillis, endMillis)
 
 	if labelFilter != "" {
 		sqlQuery += " AND " + labelFilter
@@ -696,8 +707,9 @@ func (q *Querier) GetProfileMetadataMappings(
 	}
 
 	table := q.client.FullTableName()
-	startNanos := start.UnixNano()
-	endNanos := end.UnixNano()
+	// timestamp (millis) instead of time_nanos so the primary index can prune.
+	startMillis := start.UnixMilli()
+	endMillis := end.UnixMilli()
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -712,12 +724,12 @@ func (q *Querier) GetProfileMetadataMappings(
 		SELECT DISTINCT arrayJoin(stacktrace.mapping_file) as mapping_file
 		FROM %s
 		WHERE %s
-		  AND time_nanos >= ? AND time_nanos <= ?
+		  AND timestamp >= ? AND timestamp <= ?
 	`, table, profileFilter)
 
 	// Args must be in same order as placeholders: profileArgs, then time args, then label args
 	args := append([]interface{}{}, profileArgs...)
-	args = append(args, startNanos, endNanos)
+	args = append(args, startMillis, endMillis)
 
 	if labelFilter != "" {
 		sqlQuery += " AND " + labelFilter
@@ -763,8 +775,9 @@ func (q *Querier) GetProfileMetadataLabels(
 	}
 
 	table := q.client.FullTableName()
-	startNanos := start.UnixNano()
-	endNanos := end.UnixNano()
+	// timestamp (millis) instead of time_nanos so the primary index can prune.
+	startMillis := start.UnixMilli()
+	endMillis := end.UnixMilli()
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -779,12 +792,12 @@ func (q *Querier) GetProfileMetadataLabels(
 		SELECT DISTINCT arrayJoin(JSONAllPaths(labels)) as label_name
 		FROM %s
 		WHERE %s
-		  AND time_nanos >= ? AND time_nanos <= ?
+		  AND timestamp >= ? AND timestamp <= ?
 	`, table, profileFilter)
 
 	// Args must be in same order as placeholders: profileArgs, then time args, then label args
 	args := append([]interface{}{}, profileArgs...)
-	args = append(args, startNanos, endNanos)
+	args = append(args, startMillis, endMillis)
 
 	if labelFilter != "" {
 		sqlQuery += " AND " + labelFilter
