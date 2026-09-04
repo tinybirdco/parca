@@ -109,9 +109,9 @@ func TimeRangeFilter(startNanos, endNanos int64) (string, []interface{}) {
 	return "time_nanos >= ? AND time_nanos <= ?", []interface{}{startNanos, endNanos}
 }
 
-// IndexedTimeRangeFilter uses timestamp for primary-key pruning and time_nanos
+// indexedTimeRangeFilter uses timestamp for primary-key pruning and time_nanos
 // to preserve the requested range's exact nanosecond semantics.
-func IndexedTimeRangeFilter(start, end time.Time, inclusive bool) (string, []interface{}) {
+func indexedTimeRangeFilter(start, end time.Time, inclusive bool) (string, []interface{}) {
 	lowerOperator, upperOperator := ">", "<"
 	if inclusive {
 		lowerOperator, upperOperator = ">=", "<="
