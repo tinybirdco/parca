@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -31,6 +32,17 @@ type Config struct {
 	Table       string
 	Secure      bool
 	Compression string // "", "none", "lz4", "zstd"
+
+	// Connection pool tuning. The clickhouse-go defaults (MaxOpenConns =
+	// MaxIdleConns + 5 = 10) are too small for concurrent ingest plus UI
+	// queries: a burst of slow inserts starves the pool and the server
+	// stops serving queries until restart. Zero values keep the
+	// library defaults.
+	MaxOpenConns    int
+	MaxIdleConns    int
+	DialTimeout     time.Duration
+	ConnMaxLifetime time.Duration
+	BlockBufferSize uint8
 }
 
 // Client is a wrapper around the ClickHouse connection.
@@ -65,6 +77,22 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		// leave opts.Compression nil
 	default:
 		return nil, fmt.Errorf("unsupported clickhouse compression %q (want none, lz4, zstd)", cfg.Compression)
+	}
+
+	if cfg.MaxOpenConns > 0 {
+		opts.MaxOpenConns = cfg.MaxOpenConns
+	}
+	if cfg.MaxIdleConns > 0 {
+		opts.MaxIdleConns = cfg.MaxIdleConns
+	}
+	if cfg.DialTimeout > 0 {
+		opts.DialTimeout = cfg.DialTimeout
+	}
+	if cfg.ConnMaxLifetime > 0 {
+		opts.ConnMaxLifetime = cfg.ConnMaxLifetime
+	}
+	if cfg.BlockBufferSize > 0 {
+		opts.BlockBufferSize = cfg.BlockBufferSize
 	}
 
 	conn, err := clickhouse.Open(opts)

@@ -184,6 +184,12 @@ type FlagsClickHouse struct {
 	Table       string `kong:"help='ClickHouse table name for profile data.',default='stacktraces',hidden=''"`
 	Secure      bool   `kong:"help='Use TLS for ClickHouse connection.',default='false',hidden=''"`
 	Compression string `kong:"help='ClickHouse Native protocol compression: none, lz4, zstd.',default='zstd',enum='none,lz4,zstd',hidden=''"`
+
+	MaxOpenConns    int           `kong:"help='Max ClickHouse connections. Default (0) keeps the library default of MaxIdleConns+5=10, which is too small under concurrent ingest and UI queries.',default='0',hidden=''"`
+	MaxIdleConns    int           `kong:"help='Max idle ClickHouse connections. Default (0) keeps the library default of 5.',default='0',hidden=''"`
+	DialTimeout     time.Duration `kong:"help='ClickHouse dial timeout. Default (0) keeps the library default of 30s.',default='0s',hidden=''"`
+	ConnMaxLifetime time.Duration `kong:"help='Max ClickHouse connection lifetime. Default (0) keeps the library default of 1h.',default='0s',hidden=''"`
+	BlockBufferSize uint8         `kong:"help='ClickHouse block buffer size. Default (0) keeps the library default of 2.',default='0',hidden=''"`
 }
 
 // FlagsHidden contains hidden flags intended only for debugging or experimental features.
@@ -344,13 +350,18 @@ func Run(ctx context.Context, logger log.Logger, reg *prometheus.Registry, flags
 		level.Info(logger).Log("msg", "initializing ClickHouse storage backend", "address", flags.Hidden.ClickHouse.Address)
 
 		chClient, err = clickhouse.NewClient(ctx, clickhouse.Config{
-			Address:     flags.Hidden.ClickHouse.Address,
-			Database:    flags.Hidden.ClickHouse.Database,
-			Username:    flags.Hidden.ClickHouse.Username,
-			Password:    flags.Hidden.ClickHouse.Password,
-			Table:       flags.Hidden.ClickHouse.Table,
-			Secure:      flags.Hidden.ClickHouse.Secure,
-			Compression: flags.Hidden.ClickHouse.Compression,
+			Address:         flags.Hidden.ClickHouse.Address,
+			Database:        flags.Hidden.ClickHouse.Database,
+			Username:        flags.Hidden.ClickHouse.Username,
+			Password:        flags.Hidden.ClickHouse.Password,
+			Table:           flags.Hidden.ClickHouse.Table,
+			Secure:          flags.Hidden.ClickHouse.Secure,
+			Compression:     flags.Hidden.ClickHouse.Compression,
+			MaxOpenConns:    flags.Hidden.ClickHouse.MaxOpenConns,
+			MaxIdleConns:    flags.Hidden.ClickHouse.MaxIdleConns,
+			DialTimeout:     flags.Hidden.ClickHouse.DialTimeout,
+			ConnMaxLifetime: flags.Hidden.ClickHouse.ConnMaxLifetime,
+			BlockBufferSize: flags.Hidden.ClickHouse.BlockBufferSize,
 		})
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to connect to ClickHouse", "err", err)
