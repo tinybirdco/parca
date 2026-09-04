@@ -83,7 +83,7 @@ func (q *Querier) Labels(
 
 	// Only apply time filter if both start and end are non-zero
 	if start.Unix() != 0 && end.Unix() != 0 {
-		timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, false)
+		timeFilter, timeArgs := indexedTimeRangeFilter(start, end, false)
 		conditions = append(conditions, timeFilter)
 		args = append(args, timeArgs...)
 	}
@@ -154,7 +154,7 @@ func (q *Querier) Values(
 
 	// Only apply time filter if both start and end are non-zero
 	if start.Unix() != 0 && end.Unix() != 0 {
-		timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, false)
+		timeFilter, timeArgs := indexedTimeRangeFilter(start, end, false)
 		query += " AND " + timeFilter
 		args = append(args, timeArgs...)
 	}
@@ -222,7 +222,7 @@ func (q *Querier) ProfileTypes(
 
 	// Only apply time filter if both start and end are non-zero
 	if start.Unix() != 0 && end.Unix() != 0 {
-		timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, false)
+		timeFilter, timeArgs := indexedTimeRangeFilter(start, end, false)
 		query += " WHERE " + timeFilter
 		args = append(args, timeArgs...)
 	}
@@ -309,7 +309,7 @@ func (q *Querier) QueryRange(
 	}
 
 	table := q.client.FullTableName()
-	timeFilter, timeArgs := IndexedTimeRangeFilter(startTime, endTime, true)
+	timeFilter, timeArgs := indexedTimeRangeFilter(startTime, endTime, true)
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -585,7 +585,7 @@ func (q *Querier) QueryMerge(
 	table := q.client.FullTableName()
 	startNanos := start.UnixNano()
 	endNanos := end.UnixNano()
-	timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, true)
+	timeFilter, timeArgs := indexedTimeRangeFilter(start, end, true)
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -699,7 +699,7 @@ func (q *Querier) GetProfileMetadataMappings(
 	}
 
 	table := q.client.FullTableName()
-	timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, true)
+	timeFilter, timeArgs := indexedTimeRangeFilter(start, end, true)
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -765,7 +765,7 @@ func (q *Querier) GetProfileMetadataLabels(
 	}
 
 	table := q.client.FullTableName()
-	timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, true)
+	timeFilter, timeArgs := indexedTimeRangeFilter(start, end, true)
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)

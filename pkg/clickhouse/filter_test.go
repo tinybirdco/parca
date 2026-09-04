@@ -155,7 +155,7 @@ func TestIndexedTimeRangeFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filter, args := IndexedTimeRangeFilter(start, end, tt.inclusive)
+			filter, args := indexedTimeRangeFilter(start, end, tt.inclusive)
 
 			require.Equal(t, tt.wantSQL, filter)
 			require.Equal(t, []interface{}{
