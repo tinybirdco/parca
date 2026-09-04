@@ -83,7 +83,7 @@ func (q *Querier) Labels(
 
 	// Only apply time filter if both start and end are non-zero
 	if start.Unix() != 0 && end.Unix() != 0 {
-		conditions = append(conditions, "timestamp > ? AND timestamp < ?")
+		conditions = append(conditions, "timestamp BETWEEN ? AND ?")
 		args = append(args, start.UnixMilli(), end.UnixMilli())
 	}
 
@@ -153,7 +153,7 @@ func (q *Querier) Values(
 
 	// Only apply time filter if both start and end are non-zero
 	if start.Unix() != 0 && end.Unix() != 0 {
-		query += " AND timestamp > ? AND timestamp < ?"
+		query += " AND timestamp BETWEEN ? AND ?"
 		args = append(args, start.UnixMilli(), end.UnixMilli())
 	}
 
@@ -220,7 +220,7 @@ func (q *Querier) ProfileTypes(
 
 	// Only apply time filter if both start and end are non-zero
 	if start.Unix() != 0 && end.Unix() != 0 {
-		query += " WHERE timestamp > ? AND timestamp < ?"
+		query += " WHERE timestamp BETWEEN ? AND ?"
 		args = append(args, start.UnixMilli(), end.UnixMilli())
 	}
 
