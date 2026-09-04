@@ -16,6 +16,7 @@ package clickhouse
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -106,6 +107,21 @@ func matcherToSQL(m *labels.Matcher) (string, interface{}, error) {
 // TimeRangeFilter generates SQL WHERE clause conditions for time range filtering.
 func TimeRangeFilter(startNanos, endNanos int64) (string, []interface{}) {
 	return "time_nanos >= ? AND time_nanos <= ?", []interface{}{startNanos, endNanos}
+}
+
+// IndexedTimeRangeFilter uses timestamp for primary-key pruning and time_nanos
+// to preserve the requested range's exact nanosecond semantics.
+func IndexedTimeRangeFilter(start, end time.Time, inclusive bool) (string, []interface{}) {
+	lowerOperator, upperOperator := ">", "<"
+	if inclusive {
+		lowerOperator, upperOperator = ">=", "<="
+	}
+
+	return fmt.Sprintf(
+		"timestamp BETWEEN ? AND ? AND time_nanos %s ? AND time_nanos %s ?",
+		lowerOperator,
+		upperOperator,
+	), []interface{}{start.UnixMilli(), end.UnixMilli(), start.UnixNano(), end.UnixNano()}
 }
 
 // BuildWhereClause combines multiple filter conditions into a single WHERE clause.

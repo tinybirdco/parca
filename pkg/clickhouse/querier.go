@@ -83,8 +83,9 @@ func (q *Querier) Labels(
 
 	// Only apply time filter if both start and end are non-zero
 	if start.Unix() != 0 && end.Unix() != 0 {
-		conditions = append(conditions, "timestamp BETWEEN ? AND ?")
-		args = append(args, start.UnixMilli(), end.UnixMilli())
+		timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, false)
+		conditions = append(conditions, timeFilter)
+		args = append(args, timeArgs...)
 	}
 
 	if profileType != "" {
@@ -153,8 +154,9 @@ func (q *Querier) Values(
 
 	// Only apply time filter if both start and end are non-zero
 	if start.Unix() != 0 && end.Unix() != 0 {
-		query += " AND timestamp BETWEEN ? AND ?"
-		args = append(args, start.UnixMilli(), end.UnixMilli())
+		timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, false)
+		query += " AND " + timeFilter
+		args = append(args, timeArgs...)
 	}
 
 	if profileType != "" {
@@ -220,8 +222,9 @@ func (q *Querier) ProfileTypes(
 
 	// Only apply time filter if both start and end are non-zero
 	if start.Unix() != 0 && end.Unix() != 0 {
-		query += " WHERE timestamp BETWEEN ? AND ?"
-		args = append(args, start.UnixMilli(), end.UnixMilli())
+		timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, false)
+		query += " WHERE " + timeFilter
+		args = append(args, timeArgs...)
 	}
 
 	rows, err := q.client.Query(ctx, query, args...)
@@ -306,8 +309,7 @@ func (q *Querier) QueryRange(
 	}
 
 	table := q.client.FullTableName()
-	start := startTime.UnixMilli()
-	end := endTime.UnixMilli()
+	timeFilter, timeArgs := IndexedTimeRangeFilter(startTime, endTime, true)
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -346,13 +348,13 @@ func (q *Querier) QueryRange(
 			%s
 		FROM %s
 		WHERE %s
-		  AND timestamp BETWEEN ? AND ?
-	`, sumBySelects, table, profileFilter)
+		  AND %s
+	`, sumBySelects, table, profileFilter, timeFilter)
 
 	// Build args in the correct order matching placeholder positions
 	args := []interface{}{step.Nanoseconds(), step.Nanoseconds()}
 	args = append(args, profileArgs...)
-	args = append(args, start, end)
+	args = append(args, timeArgs...)
 
 	if labelFilter != "" {
 		innerQuery += " AND " + labelFilter
@@ -583,8 +585,7 @@ func (q *Querier) QueryMerge(
 	table := q.client.FullTableName()
 	startNanos := start.UnixNano()
 	endNanos := end.UnixNano()
-	startMillis := start.UnixMilli()
-	endMillis := end.UnixMilli()
+	timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, true)
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -634,12 +635,12 @@ func (q *Querier) QueryMerge(
 			period as sample_period
 		FROM %s
 		WHERE %s
-		  AND timestamp BETWEEN ? AND ?
-	`, queryDuration, table, profileFilter)
+		  AND %s
+	`, queryDuration, table, profileFilter, timeFilter)
 
 	// Build args in the correct order matching placeholder positions
 	args := append([]interface{}{}, profileArgs...)
-	args = append(args, startMillis, endMillis)
+	args = append(args, timeArgs...)
 
 	if labelFilter != "" {
 		sqlQuery += " AND " + labelFilter
@@ -698,8 +699,7 @@ func (q *Querier) GetProfileMetadataMappings(
 	}
 
 	table := q.client.FullTableName()
-	startMillis := start.UnixMilli()
-	endMillis := end.UnixMilli()
+	timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, true)
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -714,12 +714,12 @@ func (q *Querier) GetProfileMetadataMappings(
 		SELECT DISTINCT arrayJoin(stacktrace.mapping_file) as mapping_file
 		FROM %s
 		WHERE %s
-		  AND timestamp BETWEEN ? AND ?
-	`, table, profileFilter)
+		  AND %s
+	`, table, profileFilter, timeFilter)
 
 	// Args must be in same order as placeholders: profileArgs, then time args, then label args
 	args := append([]interface{}{}, profileArgs...)
-	args = append(args, startMillis, endMillis)
+	args = append(args, timeArgs...)
 
 	if labelFilter != "" {
 		sqlQuery += " AND " + labelFilter
@@ -765,8 +765,7 @@ func (q *Querier) GetProfileMetadataLabels(
 	}
 
 	table := q.client.FullTableName()
-	startMillis := start.UnixMilli()
-	endMillis := end.UnixMilli()
+	timeFilter, timeArgs := IndexedTimeRangeFilter(start, end, true)
 
 	// Build profile type filter
 	profileFilter, profileArgs := ProfileTypeFilter(qp)
@@ -781,12 +780,12 @@ func (q *Querier) GetProfileMetadataLabels(
 		SELECT DISTINCT arrayJoin(JSONAllPaths(labels)) as label_name
 		FROM %s
 		WHERE %s
-		  AND timestamp BETWEEN ? AND ?
-	`, table, profileFilter)
+		  AND %s
+	`, table, profileFilter, timeFilter)
 
 	// Args must be in same order as placeholders: profileArgs, then time args, then label args
 	args := append([]interface{}{}, profileArgs...)
-	args = append(args, startMillis, endMillis)
+	args = append(args, timeArgs...)
 
 	if labelFilter != "" {
 		sqlQuery += " AND " + labelFilter
