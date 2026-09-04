@@ -15,6 +15,7 @@ package clickhouse
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -130,6 +131,41 @@ func TestTimeRangeFilter(t *testing.T) {
 	require.Len(t, args, 2)
 	require.Equal(t, int64(1000000000), args[0])
 	require.Equal(t, int64(2000000000), args[1])
+}
+
+func TestIndexedTimeRangeFilter(t *testing.T) {
+	start := time.Unix(1700000000, 500)
+	end := time.Unix(1700000001, 500)
+
+	tests := []struct {
+		name      string
+		inclusive bool
+		wantSQL   string
+	}{
+		{
+			name:    "exclusive",
+			wantSQL: "timestamp BETWEEN ? AND ? AND time_nanos > ? AND time_nanos < ?",
+		},
+		{
+			name:      "inclusive",
+			inclusive: true,
+			wantSQL:   "timestamp BETWEEN ? AND ? AND time_nanos >= ? AND time_nanos <= ?",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter, args := IndexedTimeRangeFilter(start, end, tt.inclusive)
+
+			require.Equal(t, tt.wantSQL, filter)
+			require.Equal(t, []interface{}{
+				int64(1700000000000),
+				int64(1700000001000),
+				int64(1700000000000000500),
+				int64(1700000001000000500),
+			}, args)
+		})
+	}
 }
 
 func TestBuildWhereClause(t *testing.T) {
