@@ -79,6 +79,24 @@ func TestDecodeLineInfoNoMapping(t *testing.T) {
 	require.Equal(t, "app/importer.py", info.FunctionFilename)
 }
 
+func TestDecodeLineInfoV2SystemName(t *testing.T) {
+	stringTable := []string{"", "decode_system", "app/importer.py"}
+	encoded := profile.EncodePprofLocation(
+		&pprofpb.Location{
+			Address: 0x47,
+			Line:    []*pprofpb.Line{{FunctionId: 1, Line: 7}},
+		},
+		nil,
+		[]*pprofpb.Function{{SystemName: 1, Filename: 2}},
+		stringTable,
+	)
+
+	info := decodeLineInfo(encoded)
+	require.Empty(t, info.FunctionName)
+	require.Equal(t, "decode_system", info.FunctionSystemName)
+	require.Equal(t, "app/importer.py", info.FunctionFilename)
+}
+
 // Native frames are sent unsymbolized (no lines); nothing should be decoded.
 func TestDecodeLineInfoUnsymbolizedFrame(t *testing.T) {
 	stringTable := []string{"", "build-id-456", "libc.so.6"}
