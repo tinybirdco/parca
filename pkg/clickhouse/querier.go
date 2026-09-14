@@ -835,6 +835,13 @@ type sampleData struct {
 	period              int64
 }
 
+func (s sampleData) hasStoredFunction(i int) bool {
+	return (i < len(s.functionNames) && s.functionNames[i] != "") ||
+		(i < len(s.functionSystemNames) && s.functionSystemNames[i] != "") ||
+		(i < len(s.functionFilenames) && s.functionFilenames[i] != "") ||
+		(i < len(s.functionStartLines) && s.functionStartLines[i] != 0)
+}
+
 // rowsToArrowRecords converts ClickHouse query results to Arrow records.
 func (q *Querier) rowsToArrowRecords(
 	ctx context.Context,
@@ -884,8 +891,8 @@ func (q *Querier) rowsToArrowRecords(
 			}
 			addr := s.addresses[i]
 
-			// Check if this location needs symbolization (no function name but has build ID)
-			needsSymbolization := (i >= len(s.functionNames) || s.functionNames[i] == "") && buildID != "" && addr != 0
+			// Symbolize only when no stored function metadata is available.
+			needsSymbolization := !s.hasStoredFunction(i) && buildID != "" && addr != 0
 
 			if needsSymbolization {
 				if _, ok := locationIndex[buildID]; !ok {
@@ -1037,8 +1044,9 @@ func (q *Querier) rowsToArrowRecords(
 						w.FunctionStartLine.AppendNull()
 					}
 				}
-			} else if idx < len(s.functionNames) && s.functionNames[idx] != "" {
-				// Use stored function data
+			} else if s.hasStoredFunction(idx) {
+				// Use stored function data, including v2 rows where only the
+				// system name is populated.
 				w.Lines.Append(true)
 				w.Line.Append(true)
 				if idx < len(s.lineNumbers) {
