@@ -77,9 +77,11 @@ export const useVisualizationState = (): {
     'group_by',
     groupByParser.withDefault([FIELD_FUNCTION_NAME])
   );
+  // Shared with resetSandwichFunctionName below, so override to 'replace';
+  // user "show in sandwich" actions push from the Table/flamegraph menus.
   const [sandwichFunctionName, setRawSandwichFunctionName] = useQueryState(
     'sandwich_function_name',
-    stringParam
+    stringParam.withOptions({history: 'replace'})
   );
   const setSandwichFunctionName = useCallback(
     (name: string | null) => {

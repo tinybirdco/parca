@@ -55,6 +55,7 @@ export interface AdditionalMetricsGraphProps {
 interface ExternalProfilerComponentProps {
   disableProfileTypesDropdown?: boolean;
   defaultProfileType?: string;
+  defaultSumBy?: string[];
   configuredLabelNames?: string[];
   disableExplorativeQuerying?: boolean;
   profileFilterDefaults?: unknown[];
@@ -126,7 +127,7 @@ export const defaultValue: Props = {
   },
   queryServiceClient: {} as unknown as QueryServiceClient,
   navigateTo: () => {},
-  enableSourcesView: false,
+  enableSourcesView: true,
   enableSandwichView: false,
   isDarkMode: false,
   preferencesModal: false,
