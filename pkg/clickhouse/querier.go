@@ -43,6 +43,7 @@ type Querier struct {
 	tracer     trace.Tracer
 	mem        memory.Allocator
 	symbolizer symbolizer.SymbolizationClient
+	demangler  profile.Demangler
 }
 
 // NewQuerier creates a new ClickHouse querier.
@@ -52,6 +53,7 @@ func NewQuerier(
 	tracer trace.Tracer,
 	mem memory.Allocator,
 	sym symbolizer.SymbolizationClient,
+	demangler profile.Demangler,
 ) *Querier {
 	return &Querier{
 		client:     client,
@@ -59,6 +61,7 @@ func NewQuerier(
 		tracer:     tracer,
 		mem:        mem,
 		symbolizer: sym,
+		demangler:  demangler,
 	}
 }
 
@@ -842,6 +845,29 @@ func (s sampleData) hasStoredFunction(i int) bool {
 		(i < len(s.functionStartLines) && s.functionStartLines[i] != 0)
 }
 
+// displayFunctionName returns the function name to expose to the query API.
+// parca-agent's v2 schema only carries the (possibly mangled) system name and
+// leaves the function name empty, and the UI only renders function_name. Mirror
+// the FrostDB path (profile.DecodeInto): derive the name from the system name
+// through the demangler whenever a system name is present.
+func (q *Querier) displayFunctionName(s sampleData, idx int) string {
+	name := ""
+	if idx < len(s.functionNames) {
+		name = s.functionNames[idx]
+	}
+	if idx >= len(s.functionSystemNames) || s.functionSystemNames[idx] == "" {
+		return name
+	}
+	systemName := s.functionSystemNames[idx]
+	if q.demangler != nil {
+		return q.demangler.Demangle([]byte(systemName))
+	}
+	if name == "" {
+		return systemName
+	}
+	return name
+}
+
 // rowsToArrowRecords converts ClickHouse query results to Arrow records.
 func (q *Querier) rowsToArrowRecords(
 	ctx context.Context,
@@ -1055,7 +1081,7 @@ func (q *Querier) rowsToArrowRecords(
 					w.LineNumber.AppendNull()
 				}
 				w.ColumnNumber.AppendNull()
-				if err := w.FunctionName.Append([]byte(s.functionNames[idx])); err != nil {
+				if err := w.FunctionName.Append([]byte(q.displayFunctionName(s, idx))); err != nil {
 					level.Error(q.logger).Log("msg", "failed to append function name", "err", err)
 					w.FunctionName.AppendNull()
 				}

@@ -330,6 +330,14 @@ func Run(ctx context.Context, logger log.Logger, reg *prometheus.Registry, flags
 		return err
 	}
 
+	// The query-time demangler derives function names from system names; both
+	// storage backends need it since parca-agent v2 only reports system names.
+	queryDemangler, err := demangle.NewDefaultDemangler()
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to initialize demangler", "err", err)
+		return err
+	}
+
 	// Initialize storage backend - either ClickHouse or FrostDB
 	var (
 		profileIngester ingester.Ingester
@@ -377,6 +385,7 @@ func Run(ctx context.Context, logger log.Logger, reg *prometheus.Registry, flags
 				flags.Symbolizer.ExternalAddr2linePath,
 				symbolizer.WithDemangleMode(flags.Symbolizer.DemangleMode),
 			),
+			queryDemangler,
 		)
 
 		// We still need the schema for ProfileColumnStore
@@ -486,11 +495,6 @@ func Run(ctx context.Context, logger log.Logger, reg *prometheus.Registry, flags
 		}
 
 		profileIngester = ingester.NewIngester(logger, table)
-		queryDemangler, err := demangle.NewDefaultDemangler()
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to initialize demangler", "err", err)
-			return err
-		}
 		querier = parcacol.NewQuerier(
 			logger,
 			tracerProvider.Tracer("querier"),
