@@ -180,6 +180,57 @@ func TestColumnQueryAPIQueryRange(t *testing.T) {
 	require.Equal(t, 10, len(res.Series[0].Samples))
 }
 
+func TestColumnQueryAPIQueryRangePerLabelset(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
+	defer mem.AssertSize(t, 0)
+	store, api := newTestColumnQueryAPI(t, mem)
+
+	fileContent, err := os.ReadFile("testdata/alloc_objects.pb.gz")
+	require.NoError(t, err)
+
+	for _, job := range []string{"api", "worker"} {
+		_, err = store.WriteRaw(ctx, &profilestorepb.WriteRawRequest{
+			Series: []*profilestorepb.RawProfileSeries{{
+				Labels: &profilestorepb.LabelSet{
+					Labels: []*profilestorepb.Label{
+						{Name: "__name__", Value: "memory"},
+						{Name: "job", Value: job},
+						{Name: "k8s.pod", Value: "pod-" + job},
+					},
+				},
+				Samples: []*profilestorepb.RawSample{{RawProfile: fileContent}},
+			}},
+		})
+		require.NoError(t, err)
+	}
+
+	jobsOf := func(series []*pb.MetricsSeries) []string {
+		jobs := make([]string, 0, len(series))
+		for _, s := range series {
+			labels := make(map[string]string, len(s.Labelset.Labels))
+			for _, label := range s.Labelset.Labels {
+				labels[label.Name] = label.Value
+			}
+			require.Len(t, s.Samples, 1)
+			jobs = append(jobs, labels["job"])
+			require.Equal(t, "pod-"+labels["job"], labels["k8s.pod"])
+		}
+		return jobs
+	}
+
+	// Without sumBy every distinct labelset is its own series.
+	res, err := api.QueryRange(ctx, &pb.QueryRangeRequest{
+		Query: `memory:alloc_objects:count:space:bytes`,
+		Start: timestamppb.New(time.Unix(0, 0)),
+		End:   timestamppb.New(time.Unix(0, 9223372036854775807)),
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"api", "worker"}, jobsOf(res.Series))
+}
+
 func TestColumnQueryAPIQuerySingle(t *testing.T) {
 	t.Parallel()
 

@@ -64,7 +64,7 @@ func stringsToDemanglerOptions(stringOptions []string) ([]demangle.Option, error
 }
 
 func MustNewDefaultDemangler() Demangler {
-	d, err := NewDemangler()
+	d, err := NewDefaultDemangler()
 	if err != nil {
 		panic(err)
 	}
@@ -73,6 +73,24 @@ func MustNewDefaultDemangler() Demangler {
 
 func NewDefaultDemangler() (Demangler, error) {
 	return NewDemangler("no_params", "no_template_params")
+}
+
+// NewDemanglerForMode creates a Demangler for a --symbolizer-demangle-mode
+// value. The "none" mode has no demangler and returns ok=false.
+func NewDemanglerForMode(mode string) (d Demangler, ok bool, err error) {
+	switch mode {
+	case "", "simple":
+		d, err = NewDefaultDemangler()
+	case "templates":
+		d, err = NewDemangler("no_params")
+	case "full":
+		d, err = NewDemangler("no_clones")
+	case "none":
+		return Demangler{}, false, nil
+	default:
+		return Demangler{}, false, fmt.Errorf("unknown demangle mode %q", mode)
+	}
+	return d, err == nil, err
 }
 
 // NewDemangler creates a new Demangler with a given demangler options.
