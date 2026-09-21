@@ -671,7 +671,6 @@ func TestColumnQueryAPIQueryDiff(t *testing.T) {
 	require.Equal(t, 2, len(testProf.Sample))
 	require.Equal(t, []int64{2}, testProf.Sample[0].Value)
 	require.Equal(t, []int64{-1}, testProf.Sample[1].Value)
-
 }
 
 func TestColumnQueryAPITypes(t *testing.T) {
