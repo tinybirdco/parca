@@ -96,3 +96,31 @@ jobs:
         if-no-files-found: error
         path: |
           bin
+
+  clickhouse-test:
+    name: Test with ClickHouse storage
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:25.8
+        env:
+          CLICKHOUSE_SKIP_USER_SETUP: "1"
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "clickhouse-client --query 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: .go-version
+      - name: Test
+        env:
+          PARCA_TEST_STORAGE: clickhouse
+          PARCA_TEST_CLICKHOUSE_ADDRESS: localhost:9000
+        run: make go/test ENABLE_RACE=yes
