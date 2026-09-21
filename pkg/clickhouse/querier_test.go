@@ -17,10 +17,40 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/parca-dev/parca/pkg/demangle"
 )
 
 func TestSampleDataHasStoredFunction(t *testing.T) {
 	require.True(t, (sampleData{functionSystemNames: []string{"local_function"}}).hasStoredFunction(0))
 	require.True(t, (sampleData{functionNames: []string{"function"}}).hasStoredFunction(0))
 	require.False(t, (sampleData{functionNames: []string{""}, functionSystemNames: []string{""}}).hasStoredFunction(0))
+}
+
+func TestDisplayFunctionNameUsesSystemName(t *testing.T) {
+	q := &Querier{demangler: demangle.MustNewDefaultDemangler()}
+
+	// parca-agent v2 rows: function_name empty, system_name populated.
+	require.Equal(t, "run_until_complete", q.displayFunctionName(sampleData{
+		functionNames:       []string{""},
+		functionSystemNames: []string{"run_until_complete"},
+	}, 0))
+
+	// Mangled system names are demangled, like the FrostDB path.
+	require.Equal(t, "TB::RowBinaryEncoder::convert()", q.displayFunctionName(sampleData{
+		functionNames:       []string{""},
+		functionSystemNames: []string{"_ZN2TB16RowBinaryEncoder7convertEv"},
+	}, 0))
+
+	// v1 rows keep working when no system name is stored.
+	require.Equal(t, "plain", q.displayFunctionName(sampleData{
+		functionNames: []string{"plain"},
+	}, 0))
+
+	// Without a demangler the raw system name is still better than nothing.
+	noDemangler := &Querier{}
+	require.Equal(t, "sys", noDemangler.displayFunctionName(sampleData{
+		functionNames:       []string{""},
+		functionSystemNames: []string{"sys"},
+	}, 0))
 }
