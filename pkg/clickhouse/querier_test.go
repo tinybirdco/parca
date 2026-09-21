@@ -14,11 +14,18 @@
 package clickhouse
 
 import (
+	"context"
+	"os"
 	"testing"
+	"time"
 
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/parca-dev/parca/pkg/demangle"
+	"github.com/parca-dev/parca/pkg/profile"
 )
 
 func TestSampleDataHasStoredFunction(t *testing.T) {
@@ -53,4 +60,54 @@ func TestDisplayFunctionNameUsesSystemName(t *testing.T) {
 		functionNames:       []string{""},
 		functionSystemNames: []string{"sys"},
 	}, 0))
+}
+
+func TestClickHouseV2FunctionNameIntegration(t *testing.T) {
+	address := os.Getenv("PARCA_TEST_CLICKHOUSE_ADDRESS")
+	if address == "" {
+		t.Skip("PARCA_TEST_CLICKHOUSE_ADDRESS is not set")
+	}
+
+	ctx := context.Background()
+	client, err := NewClient(ctx, Config{
+		Address:     address,
+		Database:    "parca_test",
+		Table:       "stacktraces_v2",
+		Compression: "none",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	require.NoError(t, client.EnsureSchema(ctx))
+	t.Cleanup(func() { require.NoError(t, client.Exec(ctx, "DROP TABLE IF EXISTS parca_test.stacktraces_v2")) })
+
+	ts := time.Unix(1700000000, 0)
+	batch, err := client.PrepareBatch(ctx, InsertSQL(client.Database(), client.Table()))
+	require.NoError(t, err)
+	require.NoError(t, batch.Append(
+		"process_cpu", "samples", "count", "cpu", "nanoseconds",
+		int64(1), int64(0), ts.UnixMilli(), ts.UnixNano(), int64(1), map[string]string{},
+		[]uint64{0}, []uint64{0}, []uint64{0}, []uint64{0}, []string{""}, []string{""},
+		[]int64{1}, []string{""}, []string{"_ZN2TB16RowBinaryEncoder7convertEv"}, []string{"row_binary.cpp"}, []int64{1},
+	))
+	require.NoError(t, batch.Send())
+
+	q := NewQuerier(
+		client,
+		log.NewNopLogger(),
+		noop.NewTracerProvider().Tracer("test"),
+		memory.NewGoAllocator(),
+		nil,
+		demangle.MustNewDefaultDemangler(),
+	)
+	result, err := q.QuerySingle(ctx, "process_cpu:samples:count:cpu:nanoseconds{}", ts, false)
+	require.NoError(t, err)
+	for _, record := range result.Samples {
+		defer record.Release()
+	}
+
+	reader, err := profile.NewReader(result)
+	require.NoError(t, err)
+	require.Len(t, reader.RecordReaders, 1)
+	r := reader.RecordReaders[0]
+	require.Equal(t, "TB::RowBinaryEncoder::convert()", string(r.LineFunctionNameDict.Value(int(r.LineFunctionNameIndices.Value(0)))))
 }

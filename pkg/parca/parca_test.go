@@ -45,6 +45,7 @@ import (
 	profilestorepb "github.com/parca-dev/parca/gen/proto/go/parca/profilestore/v1alpha1"
 	querypb "github.com/parca-dev/parca/gen/proto/go/parca/query/v1alpha1"
 	sharepb "github.com/parca-dev/parca/gen/proto/go/parca/share/v1alpha1"
+	"github.com/parca-dev/parca/internal/testutil"
 	"github.com/parca-dev/parca/pkg/ingester"
 	"github.com/parca-dev/parca/pkg/kv"
 	"github.com/parca-dev/parca/pkg/parcacol"
@@ -168,6 +169,33 @@ func MustReadAllGzip(t require.TestingT, filename string) []byte {
 	content, err := io.ReadAll(r)
 	require.NoError(t, err)
 	return content
+}
+
+func newTestStoreAndAPI(t *testing.T, mem memory.Allocator) (*profilestore.ProfileColumnStore, *queryservice.ColumnQueryAPI, *testutil.Storage) {
+	t.Helper()
+	logger := log.NewNopLogger()
+	tracer := noop.NewTracerProvider().Tracer("")
+	storage := testutil.NewStorage(t, mem)
+	schema, err := parcaprofile.Schema()
+	require.NoError(t, err)
+	store := profilestore.NewProfileColumnStore(
+		prometheus.NewRegistry(),
+		logger,
+		tracer,
+		storage.Ingester,
+		schema,
+		memory.DefaultAllocator,
+	)
+	api := queryservice.NewColumnQueryAPI(
+		logger,
+		tracer,
+		getShareServerConn(t),
+		storage.Querier,
+		mem,
+		parcacol.NewArrowToProfileConverter(tracer, kv.NewKeyMaker()),
+		nil,
+	)
+	return store, api, storage
 }
 
 func TestConsistency(t *testing.T) {
@@ -294,38 +322,12 @@ func TestPGOE2e(t *testing.T) {
 	runCmd(t, "./testdata/pgotest")
 
 	ctx := context.Background()
-	logger := log.NewNopLogger()
-	reg := prometheus.NewRegistry()
-	tracer := noop.NewTracerProvider().Tracer("")
-	col, err := frostdb.New()
-	require.NoError(t, err)
-	colDB, err := col.DB(context.Background(), "parca")
-	require.NoError(t, err)
-
-	schema, err := parcaprofile.Schema()
-	require.NoError(t, err)
-
-	table, err := colDB.Table(
-		"stacktraces",
-		frostdb.NewTableConfig(parcaprofile.SchemaDefinition()),
-	)
-	require.NoError(t, err)
+	mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
+	defer mem.AssertSize(t, 0)
+	store, api, storage := newTestStoreAndAPI(t, mem)
 
 	fileContent, err := os.ReadFile("./testdata/pgotest.prof")
 	require.NoError(t, err)
-
-	ingester := ingester.NewIngester(
-		logger,
-		table,
-	)
-	store := profilestore.NewProfileColumnStore(
-		reg,
-		logger,
-		tracer,
-		ingester,
-		schema,
-		memory.DefaultAllocator,
-	)
 
 	_, err = store.WriteRaw(ctx, &profilestorepb.WriteRawRequest{
 		Series: []*profilestorepb.RawProfileSeries{{
@@ -348,30 +350,7 @@ func TestPGOE2e(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
-	defer mem.AssertSize(t, 0)
-	require.NoError(t, table.EnsureCompaction())
-	api := queryservice.NewColumnQueryAPI(
-		logger,
-		tracer,
-		getShareServerConn(t),
-		parcacol.NewQuerier(
-			logger,
-			tracer,
-			query.NewEngine(
-				mem,
-				colDB.TableProvider(),
-			),
-			"stacktraces",
-			nil,
-			nil,
-			mem,
-		),
-		mem,
-		parcacol.NewArrowToProfileConverter(tracer, kv.NewKeyMaker()),
-		nil,
-	)
-
+	storage.EnsureReady(t)
 	res, err := api.Query(ctx, &querypb.QueryRequest{
 		Mode:       querypb.QueryRequest_MODE_MERGE,
 		ReportType: querypb.QueryRequest_REPORT_TYPE_PPROF,
@@ -395,38 +374,12 @@ func TestLabels(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	logger := log.NewNopLogger()
-	reg := prometheus.NewRegistry()
-	tracer := noop.NewTracerProvider().Tracer("")
-	col, err := frostdb.New()
-	require.NoError(t, err)
-	colDB, err := col.DB(context.Background(), "parca")
-	require.NoError(t, err)
-
-	schema, err := parcaprofile.Schema()
-	require.NoError(t, err)
-
-	table, err := colDB.Table(
-		"labels",
-		frostdb.NewTableConfig(parcaprofile.SchemaDefinition()),
-	)
-	require.NoError(t, err)
+	mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
+	defer mem.AssertSize(t, 0)
+	store, api, storage := newTestStoreAndAPI(t, mem)
 
 	fileContent, err := os.ReadFile("testdata/labels.pb.gz")
 	require.NoError(t, err)
-
-	ingester := ingester.NewIngester(
-		logger,
-		table,
-	)
-	store := profilestore.NewProfileColumnStore(
-		reg,
-		logger,
-		tracer,
-		ingester,
-		schema,
-		memory.DefaultAllocator,
-	)
 	_, err = store.WriteRaw(ctx, &profilestorepb.WriteRawRequest{
 		Series: []*profilestorepb.RawProfileSeries{{
 			Labels: &profilestorepb.LabelSet{
@@ -448,30 +401,7 @@ func TestLabels(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
-	defer mem.AssertSize(t, 0)
-	require.NoError(t, table.EnsureCompaction())
-	api := queryservice.NewColumnQueryAPI(
-		logger,
-		tracer,
-		getShareServerConn(t),
-		parcacol.NewQuerier(
-			logger,
-			tracer,
-			query.NewEngine(
-				mem,
-				colDB.TableProvider(),
-			),
-			"labels",
-			nil,
-			nil,
-			mem,
-		),
-		mem,
-		parcacol.NewArrowToProfileConverter(tracer, kv.NewKeyMaker()),
-		nil,
-	)
-
+	storage.EnsureReady(t)
 	ts := timestamppb.New(timestamp.Time(1677488315039)) // time_nanos of the profile divided by 1e6
 	res, err := api.Query(ctx, &querypb.QueryRequest{
 		GroupBy: &querypb.GroupBy{

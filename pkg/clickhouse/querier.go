@@ -15,7 +15,9 @@ package clickhouse
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -323,10 +325,10 @@ func (q *Querier) QueryRange(
 		return nil, err
 	}
 
-	// Build sumBy label selections - cast to String because by default it is forbidden to group by
-	// dynamic types in ClickHouse
-	sumBySelects := ""
-	outerLabelSelects := ""
+	// Build label selections - cast to String because by default it is forbidden to group by
+	// dynamic types in ClickHouse. Without sumBy, preserve the complete label set like FrostDB.
+	sumBySelects := ", toString(labels) AS labels_json"
+	outerLabelSelects := "labels_json, "
 	if len(sumBy) > 0 {
 		selects := make([]string, len(sumBy))
 		outerSelects := make([]string, len(sumBy))
@@ -390,11 +392,16 @@ func (q *Querier) QueryRange(
 
 	// Each row represents one unique labelset with all its samples
 	for rows.Next() {
-		// Scan label columns
+		// Scan label columns.
 		labelValues := make([]string, len(sumBy))
-		scanArgs := make([]interface{}, 0, len(sumBy)+1)
-		for i := range sumBy {
-			scanArgs = append(scanArgs, &labelValues[i])
+		scanArgs := make([]interface{}, 0, len(sumBy)+2)
+		labelsJSON := ""
+		if len(sumBy) == 0 {
+			scanArgs = append(scanArgs, &labelsJSON)
+		} else {
+			for i := range sumBy {
+				scanArgs = append(scanArgs, &labelValues[i])
+			}
 		}
 
 		// Scan samples array - ClickHouse returns array of tuples as slice of slices
@@ -405,13 +412,28 @@ func (q *Querier) QueryRange(
 		if err := rows.Scan(scanArgs...); err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
+		if len(samples) == 0 {
+			continue
+		}
 
-		// Build labelset
-		pbLabelSet := make([]*profilestorepb.Label, len(sumBy))
-		for i, s := range sumBy {
-			pbLabelSet[i] = &profilestorepb.Label{
-				Name:  s,
-				Value: labelValues[i],
+		// Build labelset.
+		pbLabelSet := make([]*profilestorepb.Label, 0, len(sumBy))
+		if len(sumBy) == 0 {
+			labels := map[string]string{}
+			if err := json.Unmarshal([]byte(labelsJSON), &labels); err != nil {
+				return nil, fmt.Errorf("failed to decode labels: %w", err)
+			}
+			names := make([]string, 0, len(labels))
+			for name := range labels {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				pbLabelSet = append(pbLabelSet, &profilestorepb.Label{Name: name, Value: labels[name]})
+			}
+		} else {
+			for i, name := range sumBy {
+				pbLabelSet = append(pbLabelSet, &profilestorepb.Label{Name: name, Value: labelValues[i]})
 			}
 		}
 
