@@ -390,50 +390,35 @@ func (q *Querier) QueryRange(
 
 	var resSeries []*pb.MetricsSeries
 
-	// Each row represents one unique labelset with all its samples
+	// Each row represents one unique labelset with all its samples.
 	for rows.Next() {
-		// Scan label columns.
-		labelValues := make([]string, len(sumBy))
-		scanArgs := make([]interface{}, 0, len(sumBy)+2)
-		labelsJSON := ""
-		if len(sumBy) == 0 {
-			scanArgs = append(scanArgs, &labelsJSON)
-		} else {
-			for i := range sumBy {
-				scanArgs = append(scanArgs, &labelValues[i])
-			}
+		// Without sumBy the single label column is the JSON labelset; with sumBy
+		// there is one String column per requested label.
+		labelColumns := make([]string, max(len(sumBy), 1))
+		scanArgs := make([]interface{}, 0, len(labelColumns)+1)
+		for i := range labelColumns {
+			scanArgs = append(scanArgs, &labelColumns[i])
 		}
 
-		// Scan samples array - ClickHouse returns array of tuples as slice of slices
-		// Each tuple element becomes []interface{}{timestamp_bucket, total_sum, duration_min}
+		// ClickHouse returns the array of tuples as a slice of
+		// []interface{}{timestamp_bucket, total_sum, duration_min}.
 		var samples [][]interface{}
 		scanArgs = append(scanArgs, &samples)
 
 		if err := rows.Scan(scanArgs...); err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
-		if len(samples) == 0 {
-			continue
-		}
 
-		// Build labelset.
-		pbLabelSet := make([]*profilestorepb.Label, 0, len(sumBy))
+		var pbLabelSet []*profilestorepb.Label
 		if len(sumBy) == 0 {
-			labels := map[string]string{}
-			if err := json.Unmarshal([]byte(labelsJSON), &labels); err != nil {
-				return nil, fmt.Errorf("failed to decode labels: %w", err)
-			}
-			names := make([]string, 0, len(labels))
-			for name := range labels {
-				names = append(names, name)
-			}
-			sort.Strings(names)
-			for _, name := range names {
-				pbLabelSet = append(pbLabelSet, &profilestorepb.Label{Name: name, Value: labels[name]})
+			pbLabelSet, err = labelsFromJSON(labelColumns[0])
+			if err != nil {
+				return nil, err
 			}
 		} else {
+			pbLabelSet = make([]*profilestorepb.Label, 0, len(sumBy))
 			for i, name := range sumBy {
-				pbLabelSet = append(pbLabelSet, &profilestorepb.Label{Name: name, Value: labelValues[i]})
+				pbLabelSet = append(pbLabelSet, &profilestorepb.Label{Name: name, Value: labelColumns[i]})
 			}
 		}
 
@@ -861,33 +846,71 @@ type sampleData struct {
 }
 
 func (s sampleData) hasStoredFunction(i int) bool {
-	return (i < len(s.functionNames) && s.functionNames[i] != "") ||
-		(i < len(s.functionSystemNames) && s.functionSystemNames[i] != "") ||
-		(i < len(s.functionFilenames) && s.functionFilenames[i] != "") ||
+	return stringAt(s.functionNames, i) != "" ||
+		stringAt(s.functionSystemNames, i) != "" ||
+		stringAt(s.functionFilenames, i) != "" ||
 		(i < len(s.functionStartLines) && s.functionStartLines[i] != 0)
 }
 
-// displayFunctionName returns the function name to expose to the query API.
-// parca-agent's v2 schema only carries the (possibly mangled) system name and
-// leaves the function name empty, and the UI only renders function_name. Mirror
-// the FrostDB path (profile.DecodeInto): derive the name from the system name
-// through the demangler whenever a system name is present.
+// displayFunctionName returns the stored display name, falling back to the
+// system name for parca-agent v2 rows, then applies the configured demangler.
 func (q *Querier) displayFunctionName(s sampleData, idx int) string {
-	name := ""
-	if idx < len(s.functionNames) {
-		name = s.functionNames[idx]
+	name := stringAt(s.functionNames, idx)
+	if name == "" {
+		name = stringAt(s.functionSystemNames, idx)
 	}
-	if idx >= len(s.functionSystemNames) || s.functionSystemNames[idx] == "" {
+	if name == "" || q.demangler == nil {
 		return name
 	}
-	systemName := s.functionSystemNames[idx]
-	if q.demangler != nil {
-		return q.demangler.Demangle([]byte(systemName))
+	return q.demangler.Demangle([]byte(name))
+}
+
+func stringAt(values []string, idx int) string {
+	if idx < len(values) {
+		return values[idx]
 	}
-	if name == "" {
-		return systemName
+	return ""
+}
+
+// labelsFromJSON decodes the toString() rendering of the ClickHouse JSON labels
+// column into a sorted labelset. ClickHouse stores dotted label names such as
+// k8s.pod as nested objects, so nested keys are joined back with dots.
+func labelsFromJSON(data string) ([]*profilestorepb.Label, error) {
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(data), &decoded); err != nil {
+		return nil, fmt.Errorf("failed to decode labels: %w", err)
 	}
-	return name
+	labels := map[string]string{}
+	flattenLabels("", decoded, labels)
+
+	names := make([]string, 0, len(labels))
+	for name := range labels {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	res := make([]*profilestorepb.Label, 0, len(names))
+	for _, name := range names {
+		res = append(res, &profilestorepb.Label{Name: name, Value: labels[name]})
+	}
+	return res, nil
+}
+
+func flattenLabels(prefix string, in map[string]any, out map[string]string) {
+	for key, value := range in {
+		name := prefix + key
+		switch v := value.(type) {
+		case nil:
+		case map[string]any:
+			flattenLabels(name+".", v, out)
+		case string:
+			out[name] = v
+		default:
+			// ClickHouse infers scalar JSON types per path, so a label value
+			// may come back unquoted; keep its textual form.
+			out[name] = fmt.Sprint(v)
+		}
+	}
 }
 
 // rowsToArrowRecords converts ClickHouse query results to Arrow records.

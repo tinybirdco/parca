@@ -34,7 +34,7 @@ func TestSampleDataHasStoredFunction(t *testing.T) {
 	require.False(t, (sampleData{functionNames: []string{""}, functionSystemNames: []string{""}}).hasStoredFunction(0))
 }
 
-func TestDisplayFunctionNameUsesSystemName(t *testing.T) {
+func TestDisplayFunctionName(t *testing.T) {
 	q := &Querier{demangler: demangle.MustNewDefaultDemangler()}
 
 	// parca-agent v2 rows: function_name empty, system_name populated.
@@ -44,7 +44,7 @@ func TestDisplayFunctionNameUsesSystemName(t *testing.T) {
 	}, 0))
 
 	// Mangled system names are demangled, like the FrostDB path.
-	require.Equal(t, "TB::RowBinaryEncoder::convert()", q.displayFunctionName(sampleData{
+	require.Equal(t, "TB::RowBinaryEncoder::convert", q.displayFunctionName(sampleData{
 		functionNames:       []string{""},
 		functionSystemNames: []string{"_ZN2TB16RowBinaryEncoder7convertEv"},
 	}, 0))
@@ -54,12 +54,46 @@ func TestDisplayFunctionNameUsesSystemName(t *testing.T) {
 		functionNames: []string{"plain"},
 	}, 0))
 
+	// An already-demangled stored name wins over the mangled system name and
+	// is returned untouched, even when it is more detailed than the default
+	// demangle mode would produce.
+	require.Equal(t, "TB::RowBinaryEncoder::convert(int const&)", q.displayFunctionName(sampleData{
+		functionNames:       []string{"TB::RowBinaryEncoder::convert(int const&)"},
+		functionSystemNames: []string{"_ZN2TB16RowBinaryEncoder7convertERKi"},
+	}, 0))
+
+	// A mangled stored name is demangled, exactly as profile.DecodeInto does.
+	require.Equal(t, "TB::RowBinaryEncoder::convert", q.displayFunctionName(sampleData{
+		functionNames:       []string{"_ZN2TB16RowBinaryEncoder7convertEv"},
+		functionSystemNames: []string{"_ZN2TB16RowBinaryEncoder7convertEv"},
+	}, 0))
+
 	// Without a demangler the raw system name is still better than nothing.
 	noDemangler := &Querier{}
 	require.Equal(t, "sys", noDemangler.displayFunctionName(sampleData{
 		functionNames:       []string{""},
 		functionSystemNames: []string{"sys"},
 	}, 0))
+}
+
+func TestLabelsFromJSON(t *testing.T) {
+	labels, err := labelsFromJSON(`{"job":"api","k8s":{"pod":"web-1","node":{"name":"n1"}},"replica":3,"gone":null}`)
+	require.NoError(t, err)
+
+	got := map[string]string{}
+	for _, l := range labels {
+		got[l.Name] = l.Value
+	}
+	require.Equal(t, map[string]string{
+		"job":           "api",
+		"k8s.node.name": "n1",
+		"k8s.pod":       "web-1",
+		"replica":       "3",
+	}, got)
+	require.Equal(t, "job", labels[0].Name, "labels are sorted by name")
+
+	_, err = labelsFromJSON("not json")
+	require.Error(t, err)
 }
 
 func TestClickHouseV2FunctionNameIntegration(t *testing.T) {
@@ -109,5 +143,5 @@ func TestClickHouseV2FunctionNameIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, reader.RecordReaders, 1)
 	r := reader.RecordReaders[0]
-	require.Equal(t, "TB::RowBinaryEncoder::convert()", string(r.LineFunctionNameDict.Value(int(r.LineFunctionNameIndices.Value(0)))))
+	require.Equal(t, "TB::RowBinaryEncoder::convert", string(r.LineFunctionNameDict.Value(int(r.LineFunctionNameIndices.Value(0)))))
 }

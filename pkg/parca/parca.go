@@ -332,10 +332,13 @@ func Run(ctx context.Context, logger log.Logger, reg *prometheus.Registry, flags
 
 	// The query-time demangler derives function names from system names; both
 	// storage backends need it since parca-agent v2 only reports system names.
-	queryDemangler, err := demangle.NewDefaultDemangler()
-	if err != nil {
+	// It follows the same mode as the symbolizer so frames render consistently.
+	var queryDemangler profile.Demangler
+	if d, ok, err := demangle.NewDemanglerForMode(flags.Symbolizer.DemangleMode); err != nil {
 		level.Error(logger).Log("msg", "failed to initialize demangler", "err", err)
 		return err
+	} else if ok {
+		queryDemangler = d
 	}
 
 	// Initialize storage backend - either ClickHouse or FrostDB
@@ -461,7 +464,8 @@ func Run(ctx context.Context, logger log.Logger, reg *prometheus.Registry, flags
 						{Level: index.L0, MaxSize: 1024 * 1024 * 15, Type: index.CompactionTypeParquetDisk},
 						{Level: index.L1, MaxSize: 1024 * 1024 * 128, Type: index.CompactionTypeParquetDisk},
 						{Level: index.L2, MaxSize: 1024 * 1024 * 512},
-					}))
+					},
+				))
 			}
 		}
 
